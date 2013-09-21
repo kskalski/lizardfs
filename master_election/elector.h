@@ -13,6 +13,8 @@ struct AcceptResponse;
 class ElectorStub;
 
 // TODO(kskalski): Move to separate utilities file
+// Allows threads to Wait() until CountDown() is called a specified number
+// of times.
 class Latch {
  public:
   Latch(size_t count) : count_(count) {}
@@ -40,6 +42,7 @@ class Latch {
   std::condition_variable cond_;
 };
 
+// Stores state received from single replica in duration of single prepare or accept phase.
 struct ReplicaInfo {
   ReplicaInfo()
     : acked(false), is_master_count(0), is_master_until(std::numeric_limits<uint64_t>::max()) {}
@@ -49,8 +52,24 @@ struct ReplicaInfo {
   uint64_t is_master_until;
 };
 
+// Implements Paxos schema for electing master among several replicas. Optimized with some
+// techniques described in http://www.eecs.harvard.edu/cs262/Readings/paxosmadelive.pdf
+//
+// The schema consists of two phases:
+// - prepare (initiated by current replica when PerformPreparePhase() is called, replies
+//   being handled by HandlePrepareReply() and using HandlePrepareRequest() for answering
+//   similar requests from other replicas), which tries to estabilish new election proposal
+//   among majority of replicas.
+// - accept (similarly implemented by PerformAcceptPhrase(), HandleAcceptReply() and
+//   HandleAcceptRequest() for processing single messages and HandleAllAcceptResponses() for
+//   analysing all responses and deciding outcome), performed after successful prepare phase
+//   and broadcasting new master as part of started election proposal (if it's still active
+//   according to majority of replicas).
 class Elector {
  public:
+  // Provided collection of replicas contains objects implementating client interface for
+  // communicating with other replicas of Elector functionality. Index corresponding to
+  // own replica number is nullptr.
   Elector(const std::vector<ElectorStub*>& replicas)
       : replicas_(replicas),
         own_index_(FindOwnReplica(replicas)),
