@@ -30,12 +30,12 @@ void server_connection_thread(Elector* elector, int sockfd) {
       std::cerr << "ERROR reading from socket\n";
       break;
     }
-    if (n == (sizeof(AcceptRequest) + 1) && buffer[0] == 'A') {
-      auto resp = elector->HandleAcceptRequest(*((const AcceptRequest*)(buffer + 1)));
+    if (n == (sizeof(AcceptRequest) + 1) && buffer[sizeof(AcceptRequest)] == 'A') {
+      auto resp = elector->HandleAcceptRequest(*((const AcceptRequest*)(buffer)));
       n = write(sockfd, resp, sizeof(AcceptResponse));
       delete resp;
-    } else if (n == (sizeof(PrepareRequest) + 1) && buffer[0] == 'P') {
-      auto resp = elector->HandlePrepareRequest(*((const PrepareRequest*)(buffer + 1)));
+    } else if (n == (sizeof(PrepareRequest) + 1) && buffer[sizeof(PrepareRequest)] == 'P') {
+      auto resp = elector->HandlePrepareRequest(*((const PrepareRequest*)(buffer)));
       n = write(sockfd, resp, sizeof(PrepareResponse));
       delete resp;
     } else if (n <= 0) {
