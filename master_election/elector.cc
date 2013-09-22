@@ -98,6 +98,7 @@ AcceptResponse* Elector::HandleAcceptRequest(const AcceptRequest& req) {
         time(NULL) + kMasterLeaseObeyTimeout;
     res->ack = true;
   } else {
+    res->master_lease_valid_until = 0;
     res->ack = false;
   }
   res->max_seen_sequence_nr = sequence_nr_;
@@ -212,7 +213,7 @@ void Elector::PerformAcceptPhrase() {
 
 void Elector::HandleAllAcceptResponses() {
   std::lock_guard<std::mutex> l(mu_);
-  uint32_t num_acks;
+  uint32_t num_acks = 0;
   time_t min_valid_lease = std::numeric_limits<time_t>::max();
   for (const auto& replica : replica_info_) {
     if (replica.acked) {

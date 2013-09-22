@@ -1,6 +1,7 @@
 #ifndef ELECTOR_PROTO_H_
 #define ELECTOR_PROTO_H_
 
+#include <cstdint>
 #include <cstring>
 #include <functional>
 

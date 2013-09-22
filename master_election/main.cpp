@@ -16,8 +16,6 @@
 #include "elector-proto.h"
 #include "persistent-connection.h"
 
-using namespace std;
-
 void error(const char *msg)
 {
     perror(msg);
@@ -27,9 +25,9 @@ void error(const char *msg)
 void server_connection_thread(Elector* elector, int sockfd) {
   char buffer[256];
   while(1) {
-    int n = read(sockfd,buffer,255);
+    int n = read(sockfd, buffer, 255);
     if (n < 0) {
-      cerr << "ERROR reading from socket\n";
+      std::cerr << "ERROR reading from socket\n";
       break;
     }
     if (n == (sizeof(AcceptRequest) + 1) && buffer[0] == 'A') {
@@ -41,13 +39,13 @@ void server_connection_thread(Elector* elector, int sockfd) {
       n = write(sockfd, resp, sizeof(PrepareResponse));
       delete resp;
     } else if (n <= 0) {
-      cerr << "ERROR writing to socket\n";
+      std::cerr << "ERROR writing to socket\n";
       break;
     } else {
-      cout << "Unrecognized message of len " << n << "\n";
+      std::cout << "Unrecognized message of len " << n << "\n";
     }
     if (n < 0) {
-      cout << "Cannot send response\n";
+      std::cout << "Cannot send response\n";
       break;
     }
   }
@@ -71,14 +69,14 @@ void server_thread(Elector* elector, int own_port) {
 
   struct sockaddr_in cli_addr;
   socklen_t clilen = sizeof(cli_addr);
-  vector<std::thread> threads;
+  std::vector<std::thread> threads;
   while (1) {
     int newsockfd = accept(sockfd,
               (struct sockaddr *) &cli_addr,
               &clilen);
     if (newsockfd < 0)
        error("ERROR on accept");
-    cout << "accepted\n";
+    std::cout << "accepted\n";
     threads.push_back(std::thread(server_connection_thread, elector, newsockfd));
   }
   for (auto& thread : threads) {
@@ -89,17 +87,17 @@ void server_thread(Elector* elector, int own_port) {
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
-    cerr << "usage " << argv[0] << " replica_index [hostname:port]+\n";
+    std::cerr << "usage " << argv[0] << " replica_index [hostname:port]+\n";
     exit(0);
   }
   const size_t own_replica_index = atoi(argv[1]);
 
-  vector<thread> client_threads;
-  vector<ElectorStub*> replicas(argc - 2);
+  std::vector<std::thread> client_threads;
+  std::vector<ElectorStub*> replicas(argc - 2);
 
   int server_port = -1;
   for (size_t i = 0; i < replicas.size(); ++i) {
-    const string hostport_str(argv[i + 2]);
+    const std::string hostport_str(argv[i + 2]);
     const int colon = hostport_str.find(':');
     const int portno = atoi(hostport_str.substr(colon + 1).c_str());
 
