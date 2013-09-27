@@ -73,6 +73,7 @@ class Elector {
   Elector(const std::vector<ElectorStub*>& replicas)
       : replicas_(replicas),
         own_index_(FindOwnReplica(replicas)),
+        stopping_(false),
         comm_in_progress_(0),
         replica_info_(replicas.size()),
         sequence_nr_(0),
@@ -80,8 +81,11 @@ class Elector {
         master_lease_valid_until_(0) {
   }
 
+  // Halts exection of Run and destroys the object.
+  ~Elector();
+
   // Periodically checks if master is elected and performs new election or lease re-newal.
-  // Blocks infinitely, should be started in dedicated thread.
+  // Blocks until destructor of object is invoked, should be started in dedicated thread.
   void Run();
 
   // Handlers for incoming Prepare/Accept RPCs from other replicas.
@@ -111,6 +115,7 @@ class Elector {
   // All replicas including this one (replicas_[own_index_] == nullptr).
   const std::vector<ElectorStub*> replicas_;
   const size_t own_index_;
+  bool stopping_;
 
   // We perform at most one proposal or accept broadcast at a time, each reply handler calls
   // latch to count down. Once all of RPCs are replied control continues to aggregate them.
@@ -126,6 +131,7 @@ class Elector {
   int master_index_;
   time_t master_lease_valid_until_;
   std::mutex mu_;
+  std::condition_variable stopped_cond_;
 };
 
 #endif /* ELECTOR_H_ */

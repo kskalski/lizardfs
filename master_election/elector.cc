@@ -3,7 +3,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <atomic>
 #include <string>
 #include <iostream>
 #include <functional>
@@ -22,11 +21,17 @@ std::function<void (A, B)> NewMemberCallback2(M* obj, void (M::* fn)(A, B)) {
 
 size_t Elector::FindOwnReplica(const std::vector<ElectorStub*>& replicas) {
   for (size_t i = 0; i < replicas.size(); ++i) {
-    if (replicas[i] == NULL) {
+    if (replicas[i] == nullptr) {
       return i;
     }
   }
   return replicas.size();
+}
+
+Elector::~Elector() {
+  std::unique_lock<std::mutex> l(mu_);
+  stopping_ = true;
+  stopped_cond_.wait(l);
 }
 
 void Elector::Run() {
@@ -34,6 +39,10 @@ void Elector::Run() {
     bool perform_prepare = false, perform_accept = false;
     {
       std::lock_guard<std::mutex> l(mu_);
+      if (stopping_) {
+        break;
+      }
+
       if (!IsMasterElectedLocked()) {
         // Nobody elected, let's try to rule them all.
         perform_prepare = true;
@@ -42,7 +51,7 @@ void Elector::Run() {
         if (my_proposal_sequence_nr_ < sequence_nr_) {
           // I'm the master, but there was some contender for title, bump up my sequence number
           perform_prepare = true;
-        } else if (time(NULL) > master_lease_valid_until_ - kMasterLeaseRenewBeforeTimeout) {
+        } else if (time(nullptr) > master_lease_valid_until_ - kMasterLeaseRenewBeforeTimeout) {
           // I'm the master, but my lease time is near end
           perform_accept = true;
         }
@@ -56,13 +65,14 @@ void Elector::Run() {
     }
     sleep(1);
   }
+  stopped_cond_.notify_one();
 }
 
 bool Elector::IAmTheMasterLocked() const {
-  return master_index_ == static_cast<int>(own_index_) && time(NULL) < master_lease_valid_until_;
+  return master_index_ == static_cast<int>(own_index_) && time(nullptr) < master_lease_valid_until_;
 }
 bool Elector::IsMasterElectedLocked() const {
-  return master_index_ >= 0 && time(NULL) < master_lease_valid_until_;
+  return master_index_ >= 0 && time(nullptr) < master_lease_valid_until_;
 }
 
 PrepareResponse* Elector::HandlePrepareRequest(const PrepareRequest& req) {
@@ -95,7 +105,7 @@ AcceptResponse* Elector::HandleAcceptRequest(const AcceptRequest& req) {
       req.sequence_nr >= sequence_nr_) {
     master_index_ = req.master_index;
     res->master_lease_valid_until = master_lease_valid_until_ =
-        time(NULL) + kMasterLeaseObeyTimeout;
+        time(nullptr) + kMasterLeaseObeyTimeout;
     res->ack = true;
   } else {
     res->master_lease_valid_until = 0;
@@ -228,6 +238,6 @@ void Elector::HandleAllAcceptResponses() {
       std::cout << "Renewed mastership " << own_index_ << "\n";
     }
     master_index_ = own_index_;
-    master_lease_valid_until_ = std::min(min_valid_lease, time(NULL) + kMasterLeaseSelfTimeout);
+    master_lease_valid_until_ = std::min(min_valid_lease, time(nullptr) + kMasterLeaseSelfTimeout);
   }
 }
