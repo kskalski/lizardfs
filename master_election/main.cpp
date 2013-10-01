@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "clock.h"
 #include "elector.h"
 #include "elector-proto.h"
 #include "persistent-connection.h"
@@ -56,8 +57,7 @@ void server_thread(Elector* elector, int own_port) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)
      error("ERROR opening socket");
-  struct sockaddr_in serv_addr;
-  bzero((char *) &serv_addr, sizeof(serv_addr));
+  sockaddr_in serv_addr;
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_addr.s_addr = INADDR_ANY;
   serv_addr.sin_port = htons(own_port);
@@ -67,7 +67,7 @@ void server_thread(Elector* elector, int own_port) {
   }
   listen(sockfd,5);
 
-  struct sockaddr_in cli_addr;
+  sockaddr_in cli_addr;
   socklen_t clilen = sizeof(cli_addr);
   std::vector<std::thread> threads;
   while (1) {
@@ -110,7 +110,8 @@ int main(int argc, char *argv[]) {
       client_threads.push_back(std::thread(std::bind(&PersistentConnection::Run, conn)));
     }
   }
-  Elector elector(replicas);
+  RealClock clock;
+  Elector elector(&clock, replicas);
   std::thread elector_t(std::bind(&Elector::Run, &elector));
   std::thread serv_t(server_thread, &elector, server_port);
 

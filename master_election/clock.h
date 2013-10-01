@@ -7,31 +7,35 @@
 
 class Clock {
  public:
+  typedef std::chrono::steady_clock std_clock;
+  typedef std_clock::duration duration;
+  typedef std_clock::time_point time_point;
+
   virtual ~Clock() {}
-  virtual std::chrono::steady_clock::time_point Now() = 0;
-  virtual void Sleep(std::chrono::steady_clock::duration duration) = 0;
+  virtual time_point Now() const = 0;
+  virtual void Sleep(duration forDuration) = 0;
 };
 
-class SteadyClock : public Clock {
+class RealClock : public Clock {
  public:
-  virtual ~SteadyClock();
-  virtual std::chrono::steady_clock::time_point Now();
-  virtual void Sleep(std::chrono::steady_clock::duration duration);
+  virtual ~RealClock() {}
+  virtual time_point Now() const;
+  virtual void Sleep(duration forDuration);
 };
 
 // Fake clock for testing. Allows setting up time and controlling its passage.
 class FakeClock : public Clock {
  public:
-  FakeClock() : current_time_(std::chrono::steady_clock::now()) {}
-  explicit FakeClock(std::chrono::steady_clock::time_point init_time) : current_time_(init_time) {}
+  FakeClock() : current_time_(std_clock::now()) {}
+  explicit FakeClock(time_point init_time) : current_time_(init_time) {}
   virtual ~FakeClock() {}
-  virtual std::chrono::steady_clock::time_point Now();
-  virtual void Sleep(std::chrono::steady_clock::duration duration);
+  virtual time_point Now() const;
+  virtual void Sleep(duration forDuration);
 
-  void MoveForward(std::chrono::steady_clock::duration duration);
+  void MoveForward(duration by);
 
  private:
-  std::chrono::steady_clock::time_point current_time_;
+  time_point current_time_;
   std::condition_variable time_passed_cond_;
   std::mutex mu_;
 };

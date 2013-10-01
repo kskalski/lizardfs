@@ -23,7 +23,6 @@ PersistentConnection::PersistentConnection(const std::string& hostname, int port
 bool PersistentConnection::SendMessage(const void* data, size_t n,
                                        void* result_data, size_t result_size) {
   std::lock_guard<std::mutex> l(mu_);
-  bzero(result_data, result_size);
   if (IsConnected()) {
     const int num_written = write(socket_, data, n);
     if (num_written >= (int)n) {
@@ -61,10 +60,8 @@ void PersistentConnection::Run() {
 
       if (IsConnected()) {
         sockaddr_in serv_addr;
-        bzero((char*) &serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
-        bcopy((char*) server->h_addr, (char*) &serv_addr.sin_addr.s_addr,
-              server->h_length);
+        memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
         serv_addr.sin_port = htons(port_);
 
         if (connect(socket_, (sockaddr*) &serv_addr, sizeof(serv_addr)) >= 0) {

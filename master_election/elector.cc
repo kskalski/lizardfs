@@ -1,6 +1,5 @@
 #include "elector.h"
 
-#include <time.h>
 #include <unistd.h>
 
 #include <string>
@@ -8,11 +7,12 @@
 #include <functional>
 #include <thread>
 
+#include "clock.h"
 #include "elector-proto.h"
 
-const time_t kMasterLeaseSelfTimeout = 20;
-const time_t kMasterLeaseObeyTimeout = 30;
-const time_t kMasterLeaseRenewBeforeTimeout = 10;
+const std::chrono::duration<int64_t> kMasterLeaseSelfTimeout = std::chrono::seconds(20);
+const std::chrono::duration<int64_t> kMasterLeaseObeyTimeout = std::chrono::seconds(30);
+const std::chrono::duration<int64_t> kMasterLeaseRenewBeforeTimeout = std::chrono::seconds(10);
 
 template<class M, class A, class B>
 std::function<void (A, B)> NewMemberCallback2(M* obj, void (M::* fn)(A, B)) {
@@ -51,7 +51,7 @@ void Elector::Run() {
         if (my_proposal_sequence_nr_ < sequence_nr_) {
           // I'm the master, but there was some contender for title, bump up my sequence number
           perform_prepare = true;
-        } else if (time(nullptr) > master_lease_valid_until_ - kMasterLeaseRenewBeforeTimeout) {
+        } else if (clock_->Now() > master_lease_valid_until_ - kMasterLeaseRenewBeforeTimeout) {
           // I'm the master, but my lease time is near end
           perform_accept = true;
         }
@@ -69,10 +69,11 @@ void Elector::Run() {
 }
 
 bool Elector::IAmTheMasterLocked() const {
-  return master_index_ == static_cast<int>(own_index_) && time(nullptr) < master_lease_valid_until_;
+  return master_index_ == static_cast<int>(own_index_) &&
+      clock_->Now() < master_lease_valid_until_;
 }
 bool Elector::IsMasterElectedLocked() const {
-  return master_index_ >= 0 && time(nullptr) < master_lease_valid_until_;
+  return master_index_ >= 0 && clock_->Now() < master_lease_valid_until_;
 }
 
 PrepareResponse* Elector::HandlePrepareRequest(const PrepareRequest& req) {
@@ -90,7 +91,8 @@ PrepareResponse* Elector::HandlePrepareRequest(const PrepareRequest& req) {
     resp->ack = false;
   }
   resp->master_index = master_index_;
-  resp->master_lease_valid_until = master_lease_valid_until_;
+  resp->master_lease_valid_until = std::chrono::duration_cast<std::chrono::milliseconds>(
+      master_lease_valid_until_.time_since_epoch()).count();
   resp->responder_index = own_index_;
   return resp;
 }
@@ -104,8 +106,9 @@ AcceptResponse* Elector::HandleAcceptRequest(const AcceptRequest& req) {
   if (!(IsMasterElectedLocked() && req.master_index != master_index_) &&
       req.sequence_nr >= sequence_nr_) {
     master_index_ = req.master_index;
-    res->master_lease_valid_until = master_lease_valid_until_ =
-        time(nullptr) + kMasterLeaseObeyTimeout;
+    master_lease_valid_until_ = clock_->Now() + kMasterLeaseObeyTimeout;
+    res->master_lease_valid_until = std::chrono::duration_cast<std::chrono::milliseconds>(
+        master_lease_valid_until_.time_since_epoch()).count();
     res->ack = true;
   } else {
     res->master_lease_valid_until = 0;
@@ -127,7 +130,8 @@ void Elector::HandlePrepareReply(const PrepareResponse& resp, bool success) {
     if (resp.master_index >= 0) {
       ++replica_info_[resp.master_index].is_master_count;
       replica_info_[resp.master_index].is_master_until = std::min(
-          replica_info_[resp.master_index].is_master_until, resp.master_lease_valid_until);
+          replica_info_[resp.master_index].is_master_until,
+          Clock::time_point(std::chrono::milliseconds(resp.master_lease_valid_until)));
     }
     sequence_nr_ = std::max(sequence_nr_, resp.max_seen_sequence_nr);
   } else {
@@ -143,7 +147,8 @@ void Elector::HandleAcceptReply(const AcceptResponse& resp, bool success) {
     std::lock_guard<std::mutex> l(mu_);
     replica_info_[resp.responder_index].acked = resp.ack;
     replica_info_[resp.responder_index].is_master_until = std::min(
-        replica_info_[resp.responder_index].is_master_until, resp.master_lease_valid_until);
+        replica_info_[resp.responder_index].is_master_until,
+        Clock::time_point(std::chrono::milliseconds(resp.master_lease_valid_until)));
     sequence_nr_ = std::max(sequence_nr_, resp.max_seen_sequence_nr);
   } else {
     std::cout << "accept reply fail\n";
@@ -184,7 +189,7 @@ void Elector::HandleAllPrepareResponses() {
       }
       if (i != own_index_ &&
           replica_info_[i].is_master_count >= replicas_.size() / 2 &&
-          static_cast<uint64_t>(time(nullptr)) < replica_info_[i].is_master_until) {
+          clock_->Now() < replica_info_[i].is_master_until) {
         std::cout << "Recovered master: " << i << "\n";
         master_index_ = i;
         master_lease_valid_until_ = replica_info_[i].is_master_until;
@@ -224,11 +229,11 @@ void Elector::PerformAcceptPhrase() {
 void Elector::HandleAllAcceptResponses() {
   std::lock_guard<std::mutex> l(mu_);
   uint32_t num_acks = 0;
-  time_t min_valid_lease = std::numeric_limits<time_t>::max();
+  Clock::time_point min_valid_lease = Clock::time_point::max();
   for (const auto& replica : replica_info_) {
     if (replica.acked) {
       ++num_acks;
-      min_valid_lease = std::min(min_valid_lease, static_cast<time_t>(replica.is_master_until));
+      min_valid_lease = std::min(min_valid_lease, replica.is_master_until);
     }
   }
   if (num_acks >= replicas_.size() / 2) {
@@ -238,6 +243,7 @@ void Elector::HandleAllAcceptResponses() {
       std::cout << "Renewed mastership " << own_index_ << "\n";
     }
     master_index_ = own_index_;
-    master_lease_valid_until_ = std::min(min_valid_lease, time(nullptr) + kMasterLeaseSelfTimeout);
+    master_lease_valid_until_ = std::min(min_valid_lease,
+                                         clock_->Now() + kMasterLeaseSelfTimeout);
   }
 }

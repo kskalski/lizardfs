@@ -6,6 +6,8 @@
 #include <vector>
 #include <mutex>
 
+#include "clock.h"
+
 struct PrepareRequest;
 struct AcceptRequest;
 struct PrepareResponse;
@@ -13,8 +15,7 @@ struct AcceptResponse;
 class ElectorStub;
 
 // TODO(kskalski): Move to separate utilities file
-// Allows threads to Wait() until CountDown() is called a specified number
-// of times.
+// Allows threads to Wait() until CountDown() is called a specified number of times.
 class Latch {
  public:
   Latch(size_t count) : count_(count) {}
@@ -45,11 +46,13 @@ class Latch {
 // Stores state received from single replica in duration of single prepare or accept phase.
 struct ReplicaInfo {
   ReplicaInfo()
-    : acked(false), is_master_count(0), is_master_until(std::numeric_limits<uint64_t>::max()) {}
+    : acked(false),
+      is_master_count(0),
+      is_master_until(Clock::time_point::max()) {}
 
   bool acked;
   uint32_t is_master_count;
-  uint64_t is_master_until;
+  Clock::time_point is_master_until;
 };
 
 // Implements Paxos schema for electing master among several replicas. Optimized with some
@@ -70,15 +73,16 @@ class Elector {
   // Provided collection of replicas contains objects implementating client interface for
   // communicating with other replicas of Elector functionality. Index corresponding to
   // own replica number is nullptr.
-  Elector(const std::vector<ElectorStub*>& replicas)
-      : replicas_(replicas),
+  Elector(Clock* clock, const std::vector<ElectorStub*>& replicas)
+      : clock_(clock),
+        replicas_(replicas),
         own_index_(FindOwnReplica(replicas)),
         stopping_(false),
         comm_in_progress_(0),
         replica_info_(replicas.size()),
         sequence_nr_(0),
         master_index_(-1),
-        master_lease_valid_until_(0) {
+        master_lease_valid_until_(Clock::time_point::min()) {
   }
 
   // Halts exection of Run and destroys the object.
@@ -112,6 +116,7 @@ class Elector {
   void PerformAcceptPhrase();
   void HandleAllAcceptResponses();
 
+  Clock* clock_;
   // All replicas including this one (replicas_[own_index_] == nullptr).
   const std::vector<ElectorStub*> replicas_;
   const size_t own_index_;
@@ -129,7 +134,7 @@ class Elector {
   uint32_t my_proposal_sequence_nr_;
   // Current master: <0 not elected, >=0 index into replicas_
   int master_index_;
-  time_t master_lease_valid_until_;
+  Clock::time_point master_lease_valid_until_;
   std::mutex mu_;
   std::condition_variable stopped_cond_;
 };
