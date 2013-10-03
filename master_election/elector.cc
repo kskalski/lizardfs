@@ -1,23 +1,18 @@
 #include "elector.h"
 
-#include <unistd.h>
-
-#include <string>
-#include <iostream>
 #include <functional>
+#include <iostream>
+#include <string>
 #include <thread>
 
 #include "clock.h"
 #include "elector-proto.h"
 
+using namespace std::placeholders;
+
 const std::chrono::duration<int64_t> kMasterLeaseSelfTimeout = std::chrono::seconds(20);
 const std::chrono::duration<int64_t> kMasterLeaseObeyTimeout = std::chrono::seconds(30);
 const std::chrono::duration<int64_t> kMasterLeaseRenewBeforeTimeout = std::chrono::seconds(10);
-
-template<class M, class A, class B>
-std::function<void (A, B)> NewMemberCallback2(M* obj, void (M::* fn)(A, B)) {
-  return [obj, fn](A a, B b) -> void { (obj->*fn)(a, b); };
-}
 
 size_t Elector::FindOwnReplica(const std::vector<ElectorStub*>& replicas) {
   for (size_t i = 0; i < replicas.size(); ++i) {
@@ -63,7 +58,7 @@ void Elector::Run() {
     } else if (perform_accept) {
       PerformAcceptPhrase();
     }
-    sleep(1);
+    clock_->Sleep(std::chrono::seconds(1));
   }
   stopped_cond_.notify_one();
 }
@@ -80,7 +75,7 @@ PrepareResponse* Elector::HandlePrepareRequest(const PrepareRequest& req) {
   std::cout << "handle prepare, seq=" << req.sequence_nr
             << ", proposer=" << req.proposer_index << "\n";
 
-  auto resp = new PrepareResponse;
+  auto* resp = new PrepareResponse;
   std::lock_guard<std::mutex> l(mu_);
   resp->max_seen_sequence_nr = sequence_nr_;
   if (!(IsMasterElectedLocked() && req.proposer_index != master_index_) &&
@@ -101,7 +96,7 @@ AcceptResponse* Elector::HandleAcceptRequest(const AcceptRequest& req) {
   std::cout << "handle accept, seq=" << req.sequence_nr
             << ", master=" << req.master_index << "\n";
 
-  auto res = new AcceptResponse;
+  auto* res = new AcceptResponse;
   std::lock_guard<std::mutex> l(mu_);
   if (!(IsMasterElectedLocked() && req.master_index != master_index_) &&
       req.sequence_nr >= sequence_nr_) {
@@ -137,7 +132,7 @@ void Elector::HandlePrepareReply(const PrepareResponse& resp, bool success) {
   } else {
     std::cout << "prepare reply fail\n";
   }
-  comm_in_progress_.CountDown();
+  rpcs_in_progress_.CountDown();
 }
 
 void Elector::HandleAcceptReply(const AcceptResponse& resp, bool success) {
@@ -153,11 +148,11 @@ void Elector::HandleAcceptReply(const AcceptResponse& resp, bool success) {
   } else {
     std::cout << "accept reply fail\n";
   }
-  comm_in_progress_.CountDown();
+  rpcs_in_progress_.CountDown();
 }
 
 void Elector::PerformPreparePhase() {
-  comm_in_progress_ = Latch(replicas_.size() - 1);
+  rpcs_in_progress_ = Latch(replicas_.size() - 1);
   PrepareRequest prepare;
   {
     std::lock_guard<std::mutex> l(mu_);
@@ -169,12 +164,12 @@ void Elector::PerformPreparePhase() {
   for (auto* replica : replicas_) {
     if (replica != nullptr) {
       replica->SendPrepareRequest(prepare,
-                                  NewMemberCallback2(this, &Elector::HandlePrepareReply));
+                                  std::bind(&Elector::HandlePrepareReply, this, _1, _2));
     }
   }
   // TODO(kskalski): Instead of waiting for all responses we should proceed when there is only
   // floor(n/2) of them. Improving it will require not reusing fields for accept phase.
-  comm_in_progress_.Wait();
+  rpcs_in_progress_.Wait();
   HandleAllPrepareResponses();
 }
 
@@ -215,14 +210,13 @@ void Elector::PerformAcceptPhrase() {
     accept.sequence_nr = my_proposal_sequence_nr_;
   }
 
-  comm_in_progress_ = Latch(replicas_.size() - 1);
+  rpcs_in_progress_ = Latch(replicas_.size() - 1);
   for (auto* replica : replicas_) {
     if (replica != nullptr) {
-      replica->SendAcceptRequest(
-          accept, NewMemberCallback2(this, &Elector::HandleAcceptReply));
+      replica->SendAcceptRequest(accept, std::bind(&Elector::HandleAcceptReply, this, _1, _2));
     }
   }
-  comm_in_progress_.Wait();
+  rpcs_in_progress_.Wait();
   HandleAllAcceptResponses();
 }
 

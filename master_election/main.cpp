@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -17,10 +16,9 @@
 #include "elector-proto.h"
 #include "persistent-connection.h"
 
-void error(const char *msg)
-{
-    perror(msg);
-    exit(1);
+void error(const char* msg) {
+  perror(msg);
+  exit(1);
 }
 
 void server_connection_thread(Elector* elector, int sockfd) {
@@ -32,11 +30,11 @@ void server_connection_thread(Elector* elector, int sockfd) {
       break;
     }
     if (n == (sizeof(AcceptRequest) + 1) && buffer[sizeof(AcceptRequest)] == 'A') {
-      auto resp = elector->HandleAcceptRequest(*((const AcceptRequest*)(buffer)));
+      auto* resp = elector->HandleAcceptRequest(*((const AcceptRequest*)(buffer)));
       n = write(sockfd, resp, sizeof(AcceptResponse));
       delete resp;
     } else if (n == (sizeof(PrepareRequest) + 1) && buffer[sizeof(PrepareRequest)] == 'P') {
-      auto resp = elector->HandlePrepareRequest(*((const PrepareRequest*)(buffer)));
+      auto* resp = elector->HandlePrepareRequest(*((const PrepareRequest*)(buffer)));
       n = write(sockfd, resp, sizeof(PrepareResponse));
       delete resp;
     } else if (n <= 0) {
@@ -85,7 +83,7 @@ void server_thread(Elector* elector, int own_port) {
   close(sockfd);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   if (argc < 3) {
     std::cerr << "usage " << argv[0] << " replica_index [hostname:port]+\n";
     exit(0);
@@ -103,7 +101,7 @@ int main(int argc, char *argv[]) {
 
     if (own_replica_index == i) {
       server_port = portno;
-      replicas[i] = NULL;
+      replicas[i] = nullptr;
     } else {
       auto conn = new PersistentConnection(hostport_str.substr(0, colon), portno);
       replicas[i] = new ElectorStub(conn);
@@ -117,7 +115,7 @@ int main(int argc, char *argv[]) {
 
   serv_t.join();
   elector_t.join();
-  for (auto &thread : client_threads) {
+  for (auto& thread : client_threads) {
     thread.join();
   }
   return 0;
