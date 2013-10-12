@@ -24,9 +24,7 @@ size_t Elector::FindOwnReplica(const std::vector<ElectorStub*>& replicas) {
 }
 
 Elector::~Elector() {
-  std::unique_lock<std::mutex> l(mu_);
-  stopping_ = true;
-  stopped_cond_.wait(l);
+  Stop();
 }
 
 void Elector::Run() {
@@ -61,6 +59,14 @@ void Elector::Run() {
     clock_->Sleep(std::chrono::seconds(1));
   }
   stopped_cond_.notify_one();
+}
+
+void Elector::Stop() {
+  std::unique_lock<std::mutex> l(mu_);
+  if (!stopping_) {
+    stopping_ = true;
+    stopped_cond_.wait(l);
+  }
 }
 
 bool Elector::IAmTheMasterLocked() const {

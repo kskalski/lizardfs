@@ -43,7 +43,7 @@ struct AcceptRequest {
   int master_index;
 };
 
-// Accept reuqest is acked if it is just extending mastership of existing master or if no 
+// Accept reuqest is acked if it is just extending mastership of existing master or if no
 // master is elected it has the same or higher sequence number as latest acked prepare
 // reuqest on given replica.
 struct AcceptResponse {
@@ -53,15 +53,16 @@ struct AcceptResponse {
   uint32_t max_seen_sequence_nr;
 };
 
-// Client for sending messages to other replicas running Elector service 
+// Client for sending messages to other replicas running Elector service
 class ElectorStub {
  public:
    ElectorStub(PersistentConnection* connection) : connection_(connection) {}
+   virtual ~ElectorStub() {}
 
-   void SendPrepareRequest(const PrepareRequest& req,
-                           std::function<void(const PrepareResponse&, bool)> callback);
-   void SendAcceptRequest(const AcceptRequest& req,
-                          std::function<void(const AcceptResponse&, bool)> callback);
+   virtual void SendPrepareRequest(const PrepareRequest& req,
+                                   std::function<void(const PrepareResponse&, bool)> callback);
+   virtual void SendAcceptRequest(const AcceptRequest& req,
+                                  std::function<void(const AcceptResponse&, bool)> callback);
 
  private:
    PersistentConnection* connection_;

@@ -67,6 +67,9 @@ class Elector {
   // Blocks until destructor of object is invoked, should be started in dedicated thread.
   void Run();
 
+  // Mark stop of loop executed in Run() and block until it finishes.
+  void Stop();
+
   // Handlers for incoming Prepare/Accept RPCs from other replicas.
   PrepareResponse* HandlePrepareRequest(const PrepareRequest& req);
   AcceptResponse* HandleAcceptRequest(const AcceptRequest& req);
